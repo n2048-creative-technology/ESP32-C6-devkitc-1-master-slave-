@@ -10,6 +10,7 @@
 
 #include "../include/rgb_led.h"
 #include "driver/uart.h"
+#include "esp_wifi.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
@@ -31,6 +32,7 @@ static bool s_params_dirty = false;
 static uint32_t s_last_params_save_ms = 0;
 static uint32_t s_led_flash_until_ms = 0;
 static bool s_force_send = false;
+static uint32_t s_last_mac_log_ms = 0;
 
 /**
  * mode = 0 → Direct/continuous: 
@@ -437,6 +439,15 @@ void loopMaster() {
   if ((now - s_last_led_ms) >= LED_BLINK_INTERVAL_MS) {
     setLed(!s_led_on);
     s_last_led_ms = now;
+  }
+
+  if ((now - s_last_mac_log_ms) >= MAC_LOG_INTERVAL_MS) {
+    uint8_t mac[6] = {0};
+    if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+      ESP_LOGI(TAG, "mac=%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2],
+               mac[3], mac[4], mac[5]);
+    }
+    s_last_mac_log_ms = now;
   }
 
   if (s_led_flash_until_ms != 0) {

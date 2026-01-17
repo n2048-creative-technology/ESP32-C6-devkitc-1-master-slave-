@@ -41,6 +41,7 @@ static const uint32_t LED_PARAM_FLASH_INTERVAL_MS = 120;
 static const uint8_t LED_PARAM_FLASH_COUNT = 2;
 static const uint32_t PARAMS_SAVE_DEBOUNCE_MS = 500;
 static const uint32_t MASTER_LED_FLASH_MS = 80;
+static const uint32_t MAC_LOG_INTERVAL_MS = 3000;
 static const float SPEED_SEND_THRESHOLD = 0.01f;
 static const float PROBABILITY_SEND_THRESHOLD = 0.01f;
 static const uint32_t SERIAL_BAUD_RATE = 115200;

@@ -8,6 +8,7 @@
 #include "../include/messages.h"
 
 #include "driver/ledc.h"
+#include "esp_wifi.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -42,6 +43,7 @@ static uint8_t s_flash_remaining = 0;
 static uint32_t s_flash_next_ms = 0;
 static bool s_params_dirty = false;
 static uint32_t s_last_params_save_ms = 0;
+static uint32_t s_last_mac_log_ms = 0;
 
 static float clampFloat(float val, float minVal, float maxVal) {
   if (val < minVal) return minVal;
@@ -416,5 +418,14 @@ void loopSlave() {
         now +
         jitterMs(SLAVE_HELLO_BURST_INTERVAL_MS, SLAVE_BURST_JITTER_MS);
     s_hello_burst_remaining--;
+  }
+
+  if ((now - s_last_mac_log_ms) >= MAC_LOG_INTERVAL_MS) {
+    uint8_t mac[6] = {0};
+    if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+      ESP_LOGI(TAG, "mac=%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2],
+               mac[3], mac[4], mac[5]);
+    }
+    s_last_mac_log_ms = now;
   }
 }

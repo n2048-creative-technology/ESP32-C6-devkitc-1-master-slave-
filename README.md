@@ -11,13 +11,19 @@ their PWM output while reporting liveness back to the master.
 - Wireless: ESP-NOW (Wi-Fi 6 radio)
 - Framework: ESP-IDF (PlatformIO)
 
+![ESP32-C6-DevKitC-1](assets/esp32-c6-devkitc-1.png)
+
 ## Wiring defaults (ESP32-C6-DevKitC-1)
 
 - MASTER
   - POT_SPEED_GPIO: 0 (ADC1)
   - POT_PERIOD_GPIO: 1 (ADC1)
 - SLAVE
-  - PWM_GPIO: 5
+  - PWM_GPIO: 5 (motor driver speed/PWM input)
+- Motor driver wiring
+  - PWM_GPIO -> motor driver speed/PWM input
+  - GND -> motor driver ground
+  - 3V3/5V -> motor driver logic supply (match your driver requirements)
 - Onboard RGB LED: GPIO 8 (addressable)
 
 Adjust pins in `include/config.h` per board.
@@ -34,6 +40,15 @@ Adjust pins in `include/config.h` per board.
     - White brightness mapped to effective speed (0..1 -> 0..255).
     - Double green flash on parameter update.
   - Persist last parameters in NVS and restore after reset.
+
+## LED patterns
+
+- Master LED (addressable RGB on GPIO 8)
+  - Red blink (1s): master running heartbeat.
+  - White flash (short): radio TX/RX activity.
+- Slave LED (addressable RGB on GPIO 8)
+  - White brightness: effective speed (0..1 mapped to 0..255).
+  - Double green flash: parameter update received.
 
 ## Parameters (mode behavior)
 
