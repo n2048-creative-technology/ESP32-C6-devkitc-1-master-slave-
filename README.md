@@ -12,12 +12,15 @@ their PWM output while reporting liveness back to the master.
 - Framework: ESP-IDF (PlatformIO)
 
 ![ESP32-C6-DevKitC-1](assets/esp32-c6-devkitc-1.png)
+![ESP32-C6-DevKitC-1 Pinout](assets/pinout.jpeg)
 
 ## Wiring defaults (ESP32-C6-DevKitC-1)
 
 - MASTER
   - POT_SPEED_GPIO: 0 (ADC1)
   - POT_PERIOD_GPIO: 1 (ADC1)
+  - OLED I2C: SDA=6, SCL=7 (addr 0x3C)
+  - Encoder: A=2, B=3, BTN=4 (use pull-ups, active-low button)
 - SLAVE
   - PWM_GPIO: 5 (motor driver speed/PWM input)
 - Motor driver wiring
@@ -27,6 +30,24 @@ their PWM output while reporting liveness back to the master.
 - Onboard RGB LED: GPIO 8 (addressable)
 
 Adjust pins in `include/config.h` per board.
+
+## Master OLED + encoder (optional)
+
+- OLED: 1.7" SH1106, I2C address 0x3C.
+- Wiring:
+  - OLED VCC -> 3V3
+  - OLED GND -> GND
+  - OLED SDA -> GPIO6
+  - OLED SCL -> GPIO7
+- Encoder:
+  - Encoder A -> GPIO2
+  - Encoder B -> GPIO3
+  - Encoder BTN -> GPIO4 (active low, internal pull-up enabled)
+
+UI behavior:
+- The OLED shows 4 lines: slaves count + speed, probability, and mode.
+- Rotate to select a parameter line, press to edit, rotate to change value,
+  press again to save.
 
 ## Behavior overview
 

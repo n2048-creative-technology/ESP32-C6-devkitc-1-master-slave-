@@ -47,6 +47,17 @@ static const float PROBABILITY_SEND_THRESHOLD = 0.01f;
 static const uint32_t SERIAL_BAUD_RATE = 115200;
 static const uint32_t SERIAL_RX_BUF = 1024;
 static const uint32_t SERIAL_TX_BUF = 0;
+// Master UI (OLED + encoder)
+static const uint8_t I2C_SDA_GPIO = 6;
+static const uint8_t I2C_SCL_GPIO = 7;
+static const uint8_t OLED_I2C_ADDR = 0x3C;
+static const uint8_t ENCODER_A_GPIO = 2;
+static const uint8_t ENCODER_B_GPIO = 3;
+static const uint8_t ENCODER_BTN_GPIO = 4;
+static const uint32_t OLED_REFRESH_MS = 200;
+static const uint32_t ENCODER_DEBOUNCE_MS = 30;
+static const float ENCODER_SPEED_STEP = 0.01f;
+static const float ENCODER_PROB_STEP = 0.01f;
 
 // Slave behavior
 static const uint32_t RX_TIMEOUT_MS = 3000;

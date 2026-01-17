@@ -2,13 +2,16 @@
 
 #include <ctype.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../include/common.h"
 #include "../include/messages.h"
+#include "../include/oled_sh1106.h"
 
 #include "../include/rgb_led.h"
+#include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_wifi.h"
 #include "nvs.h"
@@ -33,6 +36,17 @@ static uint32_t s_last_params_save_ms = 0;
 static uint32_t s_led_flash_until_ms = 0;
 static bool s_force_send = false;
 static uint32_t s_last_mac_log_ms = 0;
+static uint32_t s_last_oled_ms = 0;
+static bool s_oled_ready = false;
+static bool s_oled_dirty = false;
+static uint8_t s_selected_index = 0;
+static bool s_editing = false;
+static ParamsPayload s_edit_params = {
+    .speed = 0.0f, .probability = 1.0f, .mode = 0};
+static uint8_t s_enc_prev = 0;
+static int32_t s_enc_accum = 0;
+static bool s_btn_last = true;
+static uint32_t s_btn_last_change_ms = 0;
 
 /**
  * mode = 0 → Direct/continuous: 
@@ -70,6 +84,8 @@ static float normalizeProbability(float prob) {
 }
 
 static void triggerFlash(uint32_t now);
+static void updateOled(uint32_t now);
+static void pollEncoder(uint32_t now);
 
 static void sendPacket(uint8_t type, const ParamsPayload *params) {
   MeshPacket pkt = {};
@@ -221,6 +237,9 @@ static void handleSerial() {
                    (unsigned)s_params.mode);
           s_params_dirty = true;
           s_force_send = true;
+          s_editing = false;
+          s_edit_params = s_params;
+          s_oled_dirty = true;
           char ack_buf[96];
           int ack_len = snprintf(
               ack_buf, sizeof(ack_buf), "ACK speed=%.3f prob=%.3f mode=%u\r\n",
@@ -308,6 +327,121 @@ static void triggerFlash(uint32_t now) {
   }
 }
 
+static uint8_t readEncoderState() {
+  uint8_t a = gpio_get_level((gpio_num_t)ENCODER_A_GPIO) ? 1 : 0;
+  uint8_t b = gpio_get_level((gpio_num_t)ENCODER_B_GPIO) ? 1 : 0;
+  return (uint8_t)((a << 1) | b);
+}
+
+static void applyEncoderStep(int step) {
+  if (step == 0) {
+    return;
+  }
+
+  const uint8_t kParamCount = 3;
+
+  if (!s_editing) {
+    int next = (int)s_selected_index + step;
+    while (next < 0) {
+      next += kParamCount;
+    }
+    while (next >= (int)kParamCount) {
+      next -= kParamCount;
+    }
+    s_selected_index = (uint8_t)next;
+    s_oled_dirty = true;
+    return;
+  }
+
+  if (s_selected_index == 0) {
+    s_edit_params.speed = clampFloat(
+        s_edit_params.speed + (float)step * ENCODER_SPEED_STEP, SPEED_MIN,
+        SPEED_MAX);
+  } else if (s_selected_index == 1) {
+    s_edit_params.probability = clampFloat(
+        s_edit_params.probability + (float)step * ENCODER_PROB_STEP,
+        PROBABILITY_MIN, PROBABILITY_MAX);
+  } else {
+    if (step != 0) {
+      s_edit_params.mode = s_edit_params.mode ? 0 : 1;
+    }
+  }
+  s_oled_dirty = true;
+}
+
+static void pollEncoder(uint32_t now) {
+  uint8_t state = readEncoderState();
+  if (state != s_enc_prev) {
+    static const int8_t kTable[16] = {0, -1, 1, 0, 1, 0, 0, -1,
+                                      -1, 0, 0, 1, 0, 1, -1, 0};
+    uint8_t idx = (uint8_t)((s_enc_prev << 2) | state);
+    int8_t delta = kTable[idx];
+    s_enc_accum += delta;
+    s_enc_prev = state;
+    if (s_enc_accum >= 4) {
+      s_enc_accum = 0;
+      applyEncoderStep(1);
+    } else if (s_enc_accum <= -4) {
+      s_enc_accum = 0;
+      applyEncoderStep(-1);
+    }
+  }
+
+  bool btn = gpio_get_level((gpio_num_t)ENCODER_BTN_GPIO) ? true : false;
+  if (btn != s_btn_last &&
+      (now - s_btn_last_change_ms) >= ENCODER_DEBOUNCE_MS) {
+    s_btn_last_change_ms = now;
+    s_btn_last = btn;
+    if (!btn) {
+      if (!s_editing) {
+        s_editing = true;
+        s_edit_params = s_params;
+      } else {
+        s_params = s_edit_params;
+        s_params_dirty = true;
+        s_force_send = true;
+        s_editing = false;
+      }
+      s_oled_dirty = true;
+    }
+  }
+}
+
+static void updateOled(uint32_t now) {
+  if (!s_oled_ready) {
+    return;
+  }
+  if ((now - s_last_oled_ms) < OLED_REFRESH_MS) {
+    return;
+  }
+  if (!s_oled_dirty) {
+    return;
+  }
+
+  ParamsPayload view = s_editing ? s_edit_params : s_params;
+  char line[32];
+  oledClear();
+  uint32_t peers = radioGetPeerCount();
+  snprintf(line, sizeof(line), "SLAVES:%u", (unsigned)peers);
+  oledDrawString(0, 0, line);
+
+  char prefix = (s_selected_index == 0) ? (s_editing ? '*' : '>') : ' ';
+  snprintf(line, sizeof(line), "%cSPD:%.2f", prefix, (double)view.speed);
+  oledDrawString(0, 16, line);
+
+  prefix = (s_selected_index == 1) ? (s_editing ? '*' : '>') : ' ';
+  snprintf(line, sizeof(line), "%cPRB:%.2f", prefix, (double)view.probability);
+  oledDrawString(0, 32, line);
+
+  prefix = (s_selected_index == 2) ? (s_editing ? '*' : '>') : ' ';
+  snprintf(line, sizeof(line), "%cMODE:%u", prefix, (unsigned)view.mode);
+  oledDrawString(0, 48, line);
+
+  oledUpdate();
+  s_last_oled_ms = now;
+  s_oled_dirty = false;
+}
+
 static void saveParamsToNvs() {
   nvs_handle_t handle = 0;
   esp_err_t ret = nvs_open("leaf", NVS_READWRITE, &handle);
@@ -356,6 +490,27 @@ void setupMaster() {
   setLed(false);
 
   loadParamsFromNvs();
+  s_edit_params = s_params;
+
+  s_oled_ready =
+      oledInit(I2C_NUM_0, I2C_SDA_GPIO, I2C_SCL_GPIO, OLED_I2C_ADDR);
+  if (!s_oled_ready) {
+    ESP_LOGW(TAG, "oled init failed");
+  } else {
+    s_oled_dirty = true;
+  }
+
+  gpio_config_t io_conf = {};
+  io_conf.pin_bit_mask = (1ULL << ENCODER_A_GPIO) |
+                         (1ULL << ENCODER_B_GPIO) |
+                         (1ULL << ENCODER_BTN_GPIO);
+  io_conf.mode = GPIO_MODE_INPUT;
+  io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  ESP_ERROR_CHECK(gpio_config(&io_conf));
+  s_enc_prev = readEncoderState();
+  s_btn_last = gpio_get_level((gpio_num_t)ENCODER_BTN_GPIO) ? true : false;
+  s_btn_last_change_ms = millis();
 
   uart_config_t cfg = {};
   cfg.baud_rate = (int)SERIAL_BAUD_RATE;
@@ -373,6 +528,7 @@ void loopMaster() {
   uint32_t now = millis();
 
   handleSerial();
+  pollEncoder(now);
 
   bool changed = false;
   if (s_params.speed != s_last_sent.speed) {
@@ -391,6 +547,7 @@ void loopMaster() {
     s_last_sent = s_params;
     s_last_send_ms = now;
     s_force_send = false;
+    s_oled_dirty = true;
   }
 
   if ((now - s_last_hello_ms) >= HELLO_INTERVAL_MS) {
@@ -432,6 +589,7 @@ void loopMaster() {
     if (peer_count != s_last_peer_count) {
       ESP_LOGI(TAG, "slaves=%u", (unsigned)peer_count);
       s_last_peer_count = peer_count;
+      s_oled_dirty = true;
     }
     s_last_peer_check_ms = now;
   }
@@ -465,4 +623,6 @@ void loopMaster() {
     s_params_dirty = false;
     s_last_params_save_ms = now;
   }
+
+  updateOled(now);
 }
