@@ -1,0 +1,3 @@
+# Flash settings to match the connected ESP32-C6 module.
+CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y
+CONFIG_SPI_FLASH_SUPPORT_GD_CHIP=y
