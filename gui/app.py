@@ -16,6 +16,15 @@ except ImportError:  # pragma: no cover - handled at runtime
 
 DEFAULT_BAUD = 115200
 SLAVES_RE = re.compile(r"slaves=(\d+)")
+ACK_RE = re.compile(
+    r"ACK\s+speed=(?P<speed>[-+0-9.]+)\s+prob=(?P<prob>[-+0-9.]+)\s+mode=(?P<mode>\d+)"
+)
+PARAMS_RE = re.compile(
+    r"params\s+speed=(?P<speed>[-+0-9.]+)\s+prob=(?P<prob>[-+0-9.]+)\s+mode=(?P<mode>\d+)"
+)
+MASTER_STATUS_RE = re.compile(r".*master:\s+speed=(?P<speed>[-+0-9.]+)")
+MASTER_PROB_RE = re.compile(r".*master:\s+probability=(?P<prob>[-+0-9.]+)")
+MASTER_MODE_RE = re.compile(r".*master:\s+mode=(?P<mode>\d+)")
 
 
 class SerialWorker(threading.Thread):
@@ -100,9 +109,15 @@ class App(tk.Tk):
         self._slaves_var = tk.StringVar(value="0")
         self._status_var = tk.StringVar(value="Disconnected")
 
-        self._speed_var = tk.StringVar(value="0")
-        self._prob_var = tk.StringVar(value="0")
-        self._mode_var = tk.StringVar(value="0")
+        self._speed_var = tk.DoubleVar(value=0.0)
+        self._prob_var = tk.DoubleVar(value=0.0)
+        self._mode_var = tk.IntVar(value=0)
+        self._speed_locked = False
+        self._prob_locked = False
+        self._mode_locked = False
+        self._speed_initialized = False
+        self._prob_initialized = False
+        self._mode_initialized = False
 
         self._port_var = tk.StringVar(value="/dev/ttyACM0")
         self._baud_var = tk.StringVar(value=str(DEFAULT_BAUD))
@@ -142,19 +157,37 @@ class App(tk.Tk):
         params_frame.pack(fill="x", **pad)
 
         ttk.Label(params_frame, text="Speed (0..1)").grid(row=0, column=0, sticky="w", **pad)
-        ttk.Entry(params_frame, textvariable=self._speed_var, width=10).grid(
-            row=0, column=1, sticky="w", **pad
+        speed_scale = ttk.Scale(
+            params_frame,
+            from_=0.0,
+            to=1.0,
+            variable=self._speed_var,
+            orient="horizontal",
+            command=lambda _val: self._lock_from_user("speed"),
         )
+        speed_scale.grid(row=0, column=1, sticky="ew", **pad)
 
         ttk.Label(params_frame, text="Probability (0..1)").grid(row=0, column=2, sticky="w", **pad)
-        ttk.Entry(params_frame, textvariable=self._prob_var, width=10).grid(
-            row=0, column=3, sticky="w", **pad
+        prob_scale = ttk.Scale(
+            params_frame,
+            from_=0.0,
+            to=1.0,
+            variable=self._prob_var,
+            orient="horizontal",
+            command=lambda _val: self._lock_from_user("prob"),
         )
+        prob_scale.grid(row=0, column=3, sticky="ew", **pad)
 
-        ttk.Label(params_frame, text="Mode (0/1)").grid(row=0, column=4, sticky="w", **pad)
-        ttk.Entry(params_frame, textvariable=self._mode_var, width=6).grid(
-            row=0, column=5, sticky="w", **pad
+        ttk.Label(params_frame, text="Mode").grid(row=0, column=4, sticky="w", **pad)
+        mode_check = ttk.Checkbutton(
+            params_frame,
+            text="Probabilistic",
+            variable=self._mode_var,
+            onvalue=1,
+            offvalue=0,
+            command=lambda: self._lock_from_user("mode"),
         )
+        mode_check.grid(row=0, column=5, sticky="w", **pad)
 
         self._send_btn = ttk.Button(params_frame, text="Send", command=self._send_params)
         self._send_btn.grid(row=0, column=6, sticky="e", **pad)
@@ -165,6 +198,8 @@ class App(tk.Tk):
             text="Mode 0 = continuous (always runs), Mode 1 = probabilistic (uses probability)",
         )
         legend.grid(row=1, column=0, columnspan=7, sticky="w", **pad)
+        params_frame.columnconfigure(1, weight=1)
+        params_frame.columnconfigure(3, weight=1)
 
         log_frame = ttk.LabelFrame(self, text="Logs")
         log_frame.pack(fill="both", expand=True, **pad)
@@ -212,13 +247,9 @@ class App(tk.Tk):
         if not self._worker or not self._worker.is_alive():
             messagebox.showerror("Not connected", "Connect first.")
             return
-        try:
-            speed = float(self._speed_var.get().strip())
-            prob = float(self._prob_var.get().strip())
-            mode = int(self._mode_var.get().strip())
-        except ValueError:
-            messagebox.showerror("Invalid parameters", "Use numeric values.")
-            return
+        speed = float(self._speed_var.get())
+        prob = float(self._prob_var.get())
+        mode = int(self._mode_var.get())
         if speed < 0.0 or speed > 1.0 or prob < 0.0 or prob > 1.0 or mode not in (0, 1):
             messagebox.showerror("Out of range", "Speed/Probability 0..1, Mode 0/1.")
             return
@@ -242,6 +273,23 @@ class App(tk.Tk):
                 match = SLAVES_RE.search(payload)
                 if match:
                     self._slaves_var.set(match.group(1))
+                match = ACK_RE.search(payload) or PARAMS_RE.search(payload)
+                if match:
+                    self._apply_master_update(
+                        match.group("speed"),
+                        match.group("prob"),
+                        match.group("mode"),
+                    )
+                else:
+                    match = MASTER_STATUS_RE.search(payload)
+                    if match:
+                        self._apply_master_update(match.group("speed"), None, None)
+                    match = MASTER_PROB_RE.search(payload)
+                    if match:
+                        self._apply_master_update(None, match.group("prob"), None)
+                    match = MASTER_MODE_RE.search(payload)
+                    if match:
+                        self._apply_master_update(None, None, match.group("mode"))
             elif kind == "status":
                 self._status_var.set(payload)
                 if payload == "Disconnected":
@@ -259,6 +307,25 @@ class App(tk.Tk):
         self._log.insert("end", text + "\n")
         self._log.see("end")
         self._log.configure(state="disabled")
+
+    def _lock_from_user(self, field):
+        if field == "speed":
+            self._speed_locked = True
+        elif field == "prob":
+            self._prob_locked = True
+        elif field == "mode":
+            self._mode_locked = True
+
+    def _apply_master_update(self, speed, prob, mode):
+        if speed is not None and not self._speed_locked and not self._speed_initialized:
+            self._speed_var.set(float(speed))
+            self._speed_initialized = True
+        if prob is not None and not self._prob_locked and not self._prob_initialized:
+            self._prob_var.set(float(prob))
+            self._prob_initialized = True
+        if mode is not None and not self._mode_locked and not self._mode_initialized:
+            self._mode_var.set(int(mode))
+            self._mode_initialized = True
 
 
 if __name__ == "__main__":

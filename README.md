@@ -79,13 +79,19 @@ done
 ## GUI utility
 
 The GUI (Tkinter) lets you set parameters and view slave count/ack logs.
+Speed/probability are controlled with sliders; mode uses a checkbox.
 
 ```
 ./gui/app.py
 ```
 
+Note: On the ESP32-C6-DevKitC-1, use the USB connector labeled "COM" for the
+master node's serial connection.
+
 ## Notes
 
 - PWM is fixed direction only. Add external direction pin handling if needed.
+- Slaves continue running with the last stored parameters if the master is
+  disconnected, and attempt to rediscover periodically.
 - The mesh uses ESP-NOW broadcast plus ACK-based discovery.
 - Peer liveness uses hysteresis to avoid false disconnects.

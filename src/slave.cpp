@@ -355,8 +355,12 @@ void loopSlave() {
     s_prob_on = true;
   }
 
+  if (s_params.mode == 0) {
+    s_target_speed = s_params.speed;
+  } else {
+    s_target_speed = s_prob_on ? s_params.speed : 0.0f;
+  }
   if (s_link_lost) {
-    s_target_speed = 0.0f;
     if ((now - s_last_rejoin_burst_ms) >= SLAVE_REJOIN_BURST_INTERVAL_MS) {
       s_hello_burst_remaining = SLAVE_HELLO_BURST_COUNT;
       s_last_rejoin_burst_ms = now;
@@ -364,10 +368,6 @@ void loopSlave() {
           now +
           jitterMs(SLAVE_HELLO_BURST_INTERVAL_MS, SLAVE_BURST_JITTER_MS);
     }
-  } else if (s_params.mode == 0) {
-    s_target_speed = s_params.speed;
-  } else {
-    s_target_speed = s_prob_on ? s_params.speed : 0.0f;
   }
 
   uint32_t dt_ms = now - s_last_update_ms;
@@ -377,10 +377,7 @@ void loopSlave() {
   s_current_speed = approachFloat(s_current_speed, s_target_speed, max_step);
   setPwmSpeed(s_current_speed);
 
-  if (s_link_lost) {
-    s_flash_active = false;
-    setLed(false);
-  } else if (s_flash_active) {
+  if (s_flash_active) {
     if (now >= s_flash_next_ms) {
       s_flash_on = !s_flash_on;
       setGreen(s_flash_on);
@@ -390,7 +387,7 @@ void loopSlave() {
       s_flash_next_ms = now + LED_PARAM_FLASH_INTERVAL_MS;
       if (s_flash_remaining == 0) {
         s_flash_active = false;
-        setWhiteBySpeed(s_params.speed);
+        setWhiteBySpeed(s_target_speed);
       }
     }
   } else {
