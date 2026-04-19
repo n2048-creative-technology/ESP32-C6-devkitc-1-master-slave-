@@ -16,8 +16,11 @@ static const uint8_t RADIO_CHANNEL = 6;
 static const uint8_t POT_SPEED_GPIO = 0;
 static const uint8_t POT_PERIOD_GPIO = 1;
 
-// Slave pins
-static const uint8_t PWM_GPIO = 5;
+// Slave pins (DRV8833 motor A control)
+static const uint8_t DRV8833_AIN1_GPIO = 7;  // PWM for speed
+static const uint8_t DRV8833_AIN2_GPIO = 6;  // Direction (fixed low)
+static const uint8_t DRV8833_STBY_GPIO = 5;  // Enable (HIGH = active)
+static const uint8_t PWM_GPIO = DRV8833_AIN1_GPIO;
 // Onboard addressable RGB LED (verify GPIO for your ESP32-C6-DevKitC-1).
 static const uint8_t LED_GPIO = 8;
 

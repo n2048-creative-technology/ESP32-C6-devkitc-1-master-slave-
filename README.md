@@ -22,11 +22,17 @@ their PWM output while reporting liveness back to the master.
   - OLED I2C: SDA=6, SCL=7 (addr 0x3C)
   - Encoder: A=2, B=3, BTN=4 (use pull-ups, active-low button)
 - SLAVE
-  - PWM_GPIO: 5 (motor driver speed/PWM input)
+  - DRV8833 AIN1 (PWM): GPIO 5
+  - DRV8833 AIN2 (dir): GPIO 6
+  - DRV8833 STBY (enable): GPIO 7
 - Motor driver wiring
-  - PWM_GPIO -> motor driver speed/PWM input
+  - DRV8833 AIN1 -> motor driver AIN1 (PWM speed)
+  - DRV8833 AIN2 -> motor driver AIN2 (direction, fixed low)
+  - DRV8833 STBY -> motor driver STBY (enable)
   - GND -> motor driver ground
   - 3V3/5V -> motor driver logic supply (match your driver requirements)
+
+![DRV8833 Driver Pinout](assets/DRV8833-pinout.jpg)
 - Onboard RGB LED: GPIO 8 (addressable)
 
 Adjust pins in `include/config.h` per board.

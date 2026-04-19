@@ -7,6 +7,7 @@
 #include "../include/common.h"
 #include "../include/messages.h"
 
+#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_wifi.h"
 #include "nvs.h"
@@ -71,8 +72,10 @@ static float approachFloat(float current, float target, float maxStep) {
   return current;
 }
 
-static void setPwmSpeed(float speed) {
+static void setMotorSpeed(float speed) {
   float clamped = clampSpeed(speed);
+  gpio_set_level((gpio_num_t)DRV8833_AIN2_GPIO, 0);
+  gpio_set_level((gpio_num_t)DRV8833_STBY_GPIO, (clamped > 0.0f) ? 1 : 0);
   uint32_t max_duty = (1u << PWM_RES_BITS) - 1u;
   uint32_t duty = (uint32_t)lroundf(clamped * (float)max_duty);
   ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)PWM_CHANNEL, duty);
@@ -288,7 +291,18 @@ void setupSlave() {
   }
   setLed(false);
 
-  // Assumes PWM_GPIO is wired to the motor driver's speed input.
+  // DRV8833 motor A: AIN1 = PWM speed, AIN2 = low (fixed direction), STBY = enable.
+  gpio_config_t gpio_cfg = {};
+  gpio_cfg.pin_bit_mask =
+      (1ULL << DRV8833_AIN2_GPIO) | (1ULL << DRV8833_STBY_GPIO);
+  gpio_cfg.mode = GPIO_MODE_OUTPUT;
+  gpio_cfg.pull_up_en = GPIO_PULLUP_DISABLE;
+  gpio_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  gpio_cfg.intr_type = GPIO_INTR_DISABLE;
+  ESP_ERROR_CHECK(gpio_config(&gpio_cfg));
+  gpio_set_level((gpio_num_t)DRV8833_AIN2_GPIO, 0);
+  gpio_set_level((gpio_num_t)DRV8833_STBY_GPIO, 0);
+
   ledc_timer_config_t timer_cfg = {};
   timer_cfg.speed_mode = LEDC_LOW_SPEED_MODE;
   timer_cfg.timer_num = (ledc_timer_t)PWM_TIMER;
@@ -302,7 +316,7 @@ void setupSlave() {
   channel_cfg.channel = (ledc_channel_t)PWM_CHANNEL;
   channel_cfg.timer_sel = (ledc_timer_t)PWM_TIMER;
   channel_cfg.intr_type = LEDC_INTR_DISABLE;
-  channel_cfg.gpio_num = PWM_GPIO;
+  channel_cfg.gpio_num = DRV8833_AIN1_GPIO;
   channel_cfg.duty = 0;
   channel_cfg.hpoint = 0;
   ESP_ERROR_CHECK(ledc_channel_config(&channel_cfg));
@@ -377,7 +391,7 @@ void loopSlave() {
   float dt_s = (float)dt_ms / 1000.0f;
   float max_step = SPEED_SLEW_PER_SEC * dt_s;
   s_current_speed = approachFloat(s_current_speed, s_target_speed, max_step);
-  setPwmSpeed(s_current_speed);
+  setMotorSpeed(s_current_speed);
 
   if (s_flash_active) {
     if (now >= s_flash_next_ms) {
