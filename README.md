@@ -22,9 +22,9 @@ their PWM output while reporting liveness back to the master.
   - OLED I2C: SDA=6, SCL=7 (addr 0x3C)
   - Encoder: A=2, B=3, BTN=4 (use pull-ups, active-low button)
 - SLAVE
-  - DRV8833 AIN1 (PWM): GPIO 5
+  - DRV8833 AIN1 (PWM): GPIO 7
   - DRV8833 AIN2 (dir): GPIO 6
-  - DRV8833 STBY (enable): GPIO 7
+  - DRV8833 STBY (enable): GPIO 5
 - Motor driver wiring
   - DRV8833 AIN1 -> motor driver AIN1 (PWM speed)
   - DRV8833 AIN2 -> motor driver AIN2 (direction, fixed low)
